@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { ShoppingCart, RefreshCw, TrendingDown, AlertTriangle, CheckCircle, Minus, Plus } from "lucide-react";
+import { ShoppingCart, RefreshCw, TrendingDown, AlertTriangle, CheckCircle, Minus, Plus, Download } from "lucide-react";
 
 interface ProcurementItem {
   article: string;
@@ -122,15 +122,26 @@ export default function ProcurementPage() {
             Когда закончится товар и сколько заказать
           </p>
         </div>
-        <button
-          onClick={() => load(true)}
-          disabled={refreshing}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-          style={{ backgroundColor: "#7c3aed", color: "white" }}
-        >
-          <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
-          {refreshing ? "Обновляю..." : "Обновить данные"}
-        </button>
+        <div className="flex gap-2">
+          <a
+            href={`/api/procurement/export?leadTime=${leadTime}&targetDays=${targetDays}`}
+            download
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            style={{ backgroundColor: "#1e293b", color: "#22c55e", border: "1px solid rgba(34,197,94,0.3)" }}
+          >
+            <Download size={16} />
+            Выгрузить Excel
+          </a>
+          <button
+            onClick={() => load(true)}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+            style={{ backgroundColor: "#7c3aed", color: "white" }}
+          >
+            <RefreshCw size={16} className={refreshing ? "animate-spin" : ""} />
+            {refreshing ? "Обновляю..." : "Обновить данные"}
+          </button>
+        </div>
       </div>
 
       {/* Settings bar */}
