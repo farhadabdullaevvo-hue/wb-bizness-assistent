@@ -1,0 +1,38 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Task {
+  id        String    @id @default(cuid())
+  title     String
+  assignee  String
+  status    String    @default("todo")     // todo | progress | done | overdue
+  priority  String    @default("normal")   // low | normal | high | critical
+  deadline  DateTime?
+  note      String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model SalesPlan {
+  id            String   @id @default(cuid())
+  month         String   @unique  // формат "2026-05"
+  targetRevenue Float    // план в рублях
+  note          String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Expense {
+  id        String   @id @default(cuid())
+  month     String   // формат "2026-05"
+  category  String   // Себестоимость | Реклама WB | Логистика | Прочие
+  amount    Float    // сумма в рублях
+  note      String?
+  source    String   @default("manual") // manual | excel
+  createdAt DateTime @default(now())
+}
