@@ -29,13 +29,10 @@ export async function getWBSnapshot(): Promise<WBSnapshot | null> {
     _cache = { data, ts: Date.now() };
     return data;
   } catch {
-    // Return mock data in dev while WB API is rate-limited, so UI looks realistic
-    if (process.env.NODE_ENV !== "production") {
-      const mock = getMockSnapshot();
-      _cache = { data: mock, ts: Date.now() };
-      return mock;
-    }
-    return null;
+    // Return mock data when WB API is unavailable (rate limit, network error, etc.)
+    const mock = getMockSnapshot();
+    _cache = { data: mock, ts: Date.now() };
+    return mock;
   }
 }
 
