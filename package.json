@@ -7,12 +7,14 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "DATABASE_URL=file:./prisma/dev.db prisma generate && next build",
+    "build": "prisma generate && next build",
     "start": "mkdir -p /data && prisma migrate deploy && next start",
     "lint": "eslint"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",
+    "@libsql/client": "^0.17.3",
+    "@prisma/adapter-libsql": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "lucide-react": "^1.16.0",
     "next": "16.2.6",
