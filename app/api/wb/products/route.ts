@@ -1,4 +1,5 @@
 import { getWBSnapshot } from "@/lib/wb-cache";
+import { db } from "@/lib/db";
 import { isoDate } from "@/lib/wb-api";
 
 export interface ProductSize {
@@ -29,103 +30,103 @@ export interface Product {
   revenueYesterday: number;
   returns: number;
   warehouses: ProductWarehouse[];
+  catalogStatus: string;
+  responsible: string | null;
 }
 
 const NON_SIZE = new Set(["0", "one size", "onesize", "без размера"]);
-const SIZE_LOW  = 3;   // ≤ 3 шт. на размер → warning
+const SIZE_LOW  = 3;
 const CRITICAL_DAYS = 60;
 const WARNING_DAYS  = 90;
 
 export async function GET() {
-  const snapshot = await getWBSnapshot();
+  // Primary source: real articles from DB catalog (always available)
+  const catalog = await db.productCatalog.findMany({ orderBy: { article: "asc" } });
 
-  if (!snapshot) {
-    return Response.json({ products: [], rateLimited: true }, { status: 429 });
-  }
+  // Overlay: WB real-time metrics (may be unavailable — empty snapshot on error)
+  const snapshot = await getWBSnapshot();
+  const wbAvailable = (snapshot?.stocks.length ?? 0) > 0;
 
   const today = isoDate(0);
   const yesterday = isoDate(-1);
 
-  // Sales rate per article (avg 2 days) — for daysLeft
   const rateMap = new Map<string, number>();
-  snapshot.sales
-    .filter(s => (s.date.startsWith(today) || s.date.startsWith(yesterday)) && s.IsStorno === 0)
-    .forEach(s => rateMap.set(s.supplierArticle, (rateMap.get(s.supplierArticle) ?? 0) + 1));
-
-  // Orders today / yesterday per article
   const ordersTodayMap = new Map<string, number>();
   const ordersYesterdayMap = new Map<string, number>();
   const revenueTodayMap = new Map<string, number>();
   const revenueYesterdayMap = new Map<string, number>();
-  for (const o of snapshot.orders) {
-    if (o.isCancel) continue;
-    const price = o.finishedPrice ?? 0;
-    if (o.date.startsWith(today)) {
-      ordersTodayMap.set(o.supplierArticle, (ordersTodayMap.get(o.supplierArticle) ?? 0) + 1);
-      revenueTodayMap.set(o.supplierArticle, (revenueTodayMap.get(o.supplierArticle) ?? 0) + price);
-    } else if (o.date.startsWith(yesterday)) {
-      ordersYesterdayMap.set(o.supplierArticle, (ordersYesterdayMap.get(o.supplierArticle) ?? 0) + 1);
-      revenueYesterdayMap.set(o.supplierArticle, (revenueYesterdayMap.get(o.supplierArticle) ?? 0) + price);
-    }
-  }
-
-  // Returns (storno) today
   const returnsMap = new Map<string, number>();
-  for (const s of snapshot.sales) {
-    if (s.IsStorno === 1 && s.date.startsWith(today)) {
-      returnsMap.set(s.supplierArticle, (returnsMap.get(s.supplierArticle) ?? 0) + 1);
-    }
-  }
-
-  // Warehouse breakdown
   const warehouseMap = new Map<string, Map<string, number>>();
-  for (const s of snapshot.stocks) {
-    if (!warehouseMap.has(s.supplierArticle)) warehouseMap.set(s.supplierArticle, new Map());
-    const wh = warehouseMap.get(s.supplierArticle)!;
-    wh.set(s.warehouseName, (wh.get(s.warehouseName) ?? 0) + s.quantity);
-  }
 
-  // Group stocks by article
-  type RawProduct = {
-    nmId: number;
-    name: string;
-    category: string;
-    brand: string;
-    sizeMap: Map<string, number>; // size → total qty
-    totalQty: number;
+  type StockInfo = {
+    nmId: number; name: string; category: string; brand: string;
+    sizeMap: Map<string, number>; totalQty: number;
   };
-  const artMap = new Map<string, RawProduct>();
+  const stockMap = new Map<string, StockInfo>();
 
-  for (const s of snapshot.stocks) {
-    if (!artMap.has(s.supplierArticle)) {
-      artMap.set(s.supplierArticle, {
-        nmId: s.nmId,
-        name: s.subject,
-        category: s.category,
-        brand: s.brand,
-        sizeMap: new Map(),
-        totalQty: 0,
-      });
+  if (snapshot) {
+    snapshot.sales
+      .filter(s => (s.date.startsWith(today) || s.date.startsWith(yesterday)) && s.IsStorno === 0)
+      .forEach(s => rateMap.set(s.supplierArticle, (rateMap.get(s.supplierArticle) ?? 0) + 1));
+
+    for (const o of snapshot.orders) {
+      if (o.isCancel) continue;
+      const price = o.finishedPrice ?? 0;
+      if (o.date.startsWith(today)) {
+        ordersTodayMap.set(o.supplierArticle, (ordersTodayMap.get(o.supplierArticle) ?? 0) + 1);
+        revenueTodayMap.set(o.supplierArticle, (revenueTodayMap.get(o.supplierArticle) ?? 0) + price);
+      } else if (o.date.startsWith(yesterday)) {
+        ordersYesterdayMap.set(o.supplierArticle, (ordersYesterdayMap.get(o.supplierArticle) ?? 0) + 1);
+        revenueYesterdayMap.set(o.supplierArticle, (revenueYesterdayMap.get(o.supplierArticle) ?? 0) + price);
+      }
     }
-    const p = artMap.get(s.supplierArticle)!;
-    const size = (s.techSize ?? "").trim();
-    p.totalQty += s.quantity;
-    p.sizeMap.set(size, (p.sizeMap.get(size) ?? 0) + s.quantity);
+
+    for (const s of snapshot.sales) {
+      if (s.IsStorno === 1 && s.date.startsWith(today)) {
+        returnsMap.set(s.supplierArticle, (returnsMap.get(s.supplierArticle) ?? 0) + 1);
+      }
+    }
+
+    for (const s of snapshot.stocks) {
+      if (!warehouseMap.has(s.supplierArticle)) warehouseMap.set(s.supplierArticle, new Map());
+      const wh = warehouseMap.get(s.supplierArticle)!;
+      wh.set(s.warehouseName, (wh.get(s.warehouseName) ?? 0) + s.quantity);
+
+      if (!stockMap.has(s.supplierArticle)) {
+        stockMap.set(s.supplierArticle, {
+          nmId: s.nmId, name: s.subject, category: s.category, brand: s.brand,
+          sizeMap: new Map(), totalQty: 0,
+        });
+      }
+      const p = stockMap.get(s.supplierArticle)!;
+      const size = (s.techSize ?? "").trim();
+      p.totalQty += s.quantity;
+      p.sizeMap.set(size, (p.sizeMap.get(size) ?? 0) + s.quantity);
+    }
   }
 
   const products: Product[] = [];
 
-  for (const [article, raw] of artMap) {
-    const dailyRate = (rateMap.get(article) ?? 0) / 2;
-    const daysLeft = dailyRate > 0 ? Math.round(raw.totalQty / dailyRate) : null;
+  for (const cat of catalog) {
+    const article = cat.article;
+    const stock = stockMap.get(article);
 
-    // Check if article actually has real sizes
-    const realSizes = [...raw.sizeMap.entries()].filter(
+    const nmId = stock?.nmId ?? cat.nmId;
+    const name = cat.name ?? stock?.name ?? cat.subject ?? article;
+    const category = cat.subject ?? stock?.category ?? "";
+    const brand = stock?.brand ?? "";
+    const totalQty = stock?.totalQty ?? 0;
+    const sizeMap = stock?.sizeMap ?? new Map<string, number>();
+
+    const dailyRate = (rateMap.get(article) ?? 0) / 2;
+    const daysLeft = dailyRate > 0 ? Math.round(totalQty / dailyRate) : null;
+
+    const realSizes = [...sizeMap.entries()].filter(
       ([sz]) => sz && !NON_SIZE.has(sz.toLowerCase())
     );
     const hasSizes = realSizes.length > 0;
 
-    const sizes: ProductSize[] = (hasSizes ? realSizes : [...raw.sizeMap.entries()])
+    const sizes: ProductSize[] = (hasSizes ? realSizes : [...sizeMap.entries()])
       .map(([size, qty]) => ({
         size: size || "—",
         quantity: qty,
@@ -145,21 +146,18 @@ export async function GET() {
 
     const wh = warehouseMap.get(article);
     const warehouses: ProductWarehouse[] = wh
-      ? [...wh.entries()]
-          .map(([name, qty]) => ({ name, qty }))
-          .filter(w => w.qty > 0)
-          .sort((a, b) => b.qty - a.qty)
-          .slice(0, 5)
+      ? [...wh.entries()].map(([whName, qty]) => ({ name: whName, qty }))
+          .filter(w => w.qty > 0).sort((a, b) => b.qty - a.qty).slice(0, 5)
       : [];
 
     products.push({
-      nmId: raw.nmId,
+      nmId,
       article,
-      name: raw.name,
-      category: raw.category,
-      brand: raw.brand,
+      name,
+      category,
+      brand,
       hasSizes,
-      totalQty: raw.totalQty,
+      totalQty,
       daysLeft,
       sizes,
       status,
@@ -169,10 +167,11 @@ export async function GET() {
       revenueYesterday: Math.round(revenueYesterdayMap.get(article) ?? 0),
       returns: returnsMap.get(article) ?? 0,
       warehouses,
+      catalogStatus: cat.status,
+      responsible: cat.responsible,
     });
   }
 
-  // Sort: critical → warning → ok, then by daysLeft asc
   products.sort((a, b) => {
     const order = { critical: 0, warning: 1, ok: 2 };
     if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
@@ -181,5 +180,9 @@ export async function GET() {
     return da - db;
   });
 
-  return Response.json({ products, updatedAt: snapshot.fetchedAt });
+  return Response.json({
+    products,
+    updatedAt: snapshot?.fetchedAt ?? new Date().toISOString(),
+    wbAvailable,
+  });
 }

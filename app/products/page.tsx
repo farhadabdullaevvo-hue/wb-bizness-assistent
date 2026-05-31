@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { RotateCcw, Loader2, AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Package } from "lucide-react";
+import { RotateCcw, Loader2, AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Package, WifiOff } from "lucide-react";
 import type { Product } from "@/app/api/wb/products/route";
 
 function fmtRev(n: number): string {
@@ -101,6 +101,18 @@ function ProductRow({ product }: { product: Product }) {
               {product.article}
             </span>
             <StatusBadge status={product.status} />
+            {product.catalogStatus && product.catalogStatus !== "Без статуса" && (
+              <span className="text-xs px-2 py-0.5 rounded-full font-medium shrink-0"
+                style={{ backgroundColor: "#ede9fe", color: "#7c3aed" }}>
+                {product.catalogStatus}
+              </span>
+            )}
+            {product.responsible && (
+              <span className="text-xs px-2 py-0.5 rounded-full shrink-0"
+                style={{ backgroundColor: "#f1f5f9", color: "#64748b" }}>
+                {product.responsible}
+              </span>
+            )}
           </div>
           <div className="shrink-0 mt-0.5" style={{ color: "#94a3b8" }}>
             {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
@@ -219,7 +231,8 @@ function ProductRow({ product }: { product: Product }) {
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<"rate_limit" | "error" | null>(null);
+  const [error, setError] = useState<"error" | null>(null);
+  const [wbAvailable, setWbAvailable] = useState(true);
   const [filter, setFilter] = useState<"all" | "critical" | "warning">("all");
   const [refreshing, setRefreshing] = useState(false);
   const [updatedAt, setUpdatedAt] = useState("");
@@ -229,11 +242,11 @@ export default function ProductsPage() {
     try {
       const url = bust ? `/api/wb/products?t=${Date.now()}` : "/api/wb/products";
       const res = await fetch(url);
-      const data = await res.json();
-      if (res.status === 429 || data.rateLimited) { setError("rate_limit"); return; }
       if (!res.ok) throw new Error();
+      const data = await res.json();
       setProducts(data.products ?? []);
       setUpdatedAt(data.updatedAt ?? "");
+      setWbAvailable(data.wbAvailable ?? false);
     } catch {
       setError("error");
     } finally {
@@ -282,18 +295,18 @@ export default function ProductsPage() {
       </div>
 
       {/* Error banners */}
-      {error === "rate_limit" && (
+      {!wbAvailable && !loading && !error && (
         <div className="mb-5 px-4 py-3 rounded-xl text-sm flex items-center gap-2"
           style={{ backgroundColor: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" }}>
-          <AlertTriangle size={15} />
-          WB API временно недоступен (лимит запросов). Подождите минуту и нажмите «Обновить».
+          <WifiOff size={15} />
+          WB API недоступен — показываем товары из каталога без данных об остатках. Нажмите «Обновить» через минуту.
         </div>
       )}
       {error === "error" && (
         <div className="mb-5 px-4 py-3 rounded-xl text-sm flex items-center gap-2"
           style={{ backgroundColor: "#fee2e2", color: "#dc2626", border: "1px solid #fecaca" }}>
           <AlertTriangle size={15} />
-          Ошибка загрузки данных WB.
+          Ошибка загрузки данных.
         </div>
       )}
 
@@ -379,7 +392,7 @@ export default function ProductsPage() {
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <CheckCircle2 size={40} color="#86efac" className="mb-3" />
           <p className="font-semibold" style={{ color: "#16a34a" }}>
-            {filter === "all" ? "Нет данных — WB API ещё не загружен" : "В этой категории всё хорошо"}
+            {filter === "all" ? "Каталог пуст — загрузите артикулы на странице Команда" : "В этой категории всё хорошо"}
           </p>
         </div>
       ) : (
