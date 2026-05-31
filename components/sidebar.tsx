@@ -10,6 +10,7 @@ import {
   TrendingUp,
   Receipt,
   ShoppingCart,
+  Users,
   Settings,
   Zap,
 } from "lucide-react";
@@ -22,6 +23,7 @@ const navItems = [
   { href: "/plans",       label: "Планы продаж",   icon: TrendingUp },
   { href: "/costs",       label: "Расходы",        icon: Receipt },
   { href: "/procurement", label: "Закупки",        icon: ShoppingCart },
+  { href: "/team",        label: "Команда",        icon: Users },
 ];
 
 export default function Sidebar() {
