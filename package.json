@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "DATABASE_URL=file:./prisma/dev.db prisma generate && next build",
     "start": "mkdir -p /data && prisma migrate deploy && next start",
     "lint": "eslint"
   },
