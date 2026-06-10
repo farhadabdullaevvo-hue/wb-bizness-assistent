@@ -40,12 +40,36 @@ const CRITICAL_DAYS = 60;
 const WARNING_DAYS  = 90;
 
 export async function GET() {
-  // Primary source: real articles from DB catalog (always available)
-  const catalog = await db.productCatalog.findMany({ orderBy: { article: "asc" } });
-
-  // Overlay: WB real-time metrics (may be unavailable — empty snapshot on error)
+  // WB real-time snapshot (может быть недоступен при rate-limit)
   const snapshot = await getWBSnapshot();
   const wbAvailable = (snapshot?.stocks.length ?? 0) > 0;
+
+  // Авто-заполнение каталога: если WB дал данные, а каталог пуст — синхронизируем артикулы из WB
+  if (wbAvailable && snapshot) {
+    const existingCount = await db.productCatalog.count();
+    if (existingCount === 0) {
+      const seen = new Set<string>();
+      for (const s of snapshot.stocks) {
+        if (seen.has(s.supplierArticle)) continue;
+        seen.add(s.supplierArticle);
+        await db.productCatalog.upsert({
+          where: { nmId: s.nmId },
+          create: {
+            nmId: s.nmId,
+            article: s.supplierArticle,
+            subject: s.subject ?? null,
+            name: s.subject ?? null,
+            status: "Без статуса",
+            responsible: null,
+          },
+          update: {},
+        });
+      }
+    }
+  }
+
+  // Primary source: артикулы из каталога (читаем после возможной авто-синхронизации)
+  const catalog = await db.productCatalog.findMany({ orderBy: { article: "asc" } });
 
   const today = isoDate(0);
   const yesterday = isoDate(-1);

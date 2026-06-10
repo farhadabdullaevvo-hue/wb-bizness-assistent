@@ -59,9 +59,21 @@ export interface WBStock {
   Discount: number;
 }
 
+export class WBRateLimitError extends Error {
+  retryAfterMs: number;
+  constructor(retryAfterSec: number) {
+    super(`WB API rate limit — retry after ${retryAfterSec}s`);
+    this.retryAfterMs = retryAfterSec * 1000;
+  }
+}
+
 async function wbFetch(url: string): Promise<Response> {
   const res = await fetch(url, { headers: wbHeaders() });
-  if (res.status === 429) throw Object.assign(new Error("WB API rate limit (429)"), { status: 429 });
+  if (res.status === 429) {
+    // x-ratelimit-retry содержит точное время ожидания в секундах
+    const retryAfter = parseInt(res.headers.get("x-ratelimit-retry") ?? "60", 10);
+    throw new WBRateLimitError(isNaN(retryAfter) ? 60 : retryAfter);
+  }
   if (!res.ok) throw new Error(`WB API error ${res.status}`);
   return res;
 }
