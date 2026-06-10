@@ -21,7 +21,7 @@ declare global {
 globalThis._wbCache ??= null;
 globalThis._wbLastGood ??= null;
 
-const TTL = 15 * 60 * 1000;
+const TTL = 60 * 60 * 1000; // 1 час
 const DEFAULT_RETRY = 90 * 1000;
 
 export async function getWBSnapshot(): Promise<WBSnapshot | null> {
